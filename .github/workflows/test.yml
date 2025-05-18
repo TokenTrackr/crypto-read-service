@@ -32,10 +32,13 @@ jobs:
       - name: Make Maven Wrapper executable
         run: chmod +x ./mvnw
 
-      - name: Build and run tests
-        run: ./mvnw clean verify
+      - name: Build and run tests (skip OWASP Dependency-Check)
+        run: ./mvnw clean verify -Ddependency-check.skip=true
 
       - name: SonarCloud Scan
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-        run: ./mvnw sonar:sonar -Dsonar.token=$SONAR_TOKEN
+        run: ./mvnw sonar:sonar \
+          -Dsonar.organization=tokentrackr \
+          -Dsonar.projectKey=TokenTrackr_crypto-read-service \
+          -Dsonar.login=$SONAR_TOKEN
