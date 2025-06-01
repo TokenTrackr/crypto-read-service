@@ -20,6 +20,7 @@ import java.util.*;
 public class RedisCacheServiceImpl implements CryptoCacheService {
 
     private static final String CRYPTO_CACHE_KEY_PREFIX = "crypto:";
+    private static final String CRYPTOS_ZSET_KEY      = "cryptos:all";
 
     private final RedisTemplate<String, Crypto> redisTemplate;
     private final StringRedisSerializer keySerializer = new StringRedisSerializer();
@@ -29,7 +30,7 @@ public class RedisCacheServiceImpl implements CryptoCacheService {
     public Optional<Crypto> getCryptoById(String id) {
         try {
             String key = CRYPTO_CACHE_KEY_PREFIX + id;
-            Crypto data = (Crypto) redisTemplate.opsForValue().get(key);
+            Crypto data = redisTemplate.opsForValue().get(key);
             return Optional.ofNullable(data);
         } catch (Exception e) {
             log.error("Error retrieving crypto data: {}", e.getMessage(), e);
@@ -37,25 +38,30 @@ public class RedisCacheServiceImpl implements CryptoCacheService {
         }
     }
 
-
     @Override
     public void cacheCrypto(List<Crypto> cryptos) {
         try {
             redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+                byte[] zsetKeyBytes = keySerializer.serialize(CRYPTOS_ZSET_KEY);
+
                 for (Crypto crypto : cryptos) {
                     String key = CRYPTO_CACHE_KEY_PREFIX + crypto.getId();
                     byte[] keyBytes = keySerializer.serialize(key);
 
                     if (keyBytes == null) {
-                        // Should never happen for a non-null key, but we guard just in case
                         log.warn("Skipping crypto caching because serialized key was null for id={}", crypto.getId());
                         continue;
                     }
 
                     try {
                         byte[] valueBytes = objectMapper.writeValueAsBytes(crypto);
-                        // Use the new stringCommands() API instead of the deprecated DefaultedRedisConnection.set(...)
+                        // 1) Store JSON under "crypto:<id>"
                         connection.stringCommands().set(keyBytes, valueBytes);
+
+                        // 2) ZADD into "cryptos:all" with score = marketCapRank
+                        double score = (double) crypto.getMarketCapRank();
+                        connection.zSetCommands().zAdd(zsetKeyBytes, score, keyBytes);
+
                     } catch (JsonProcessingException e) {
                         log.error("Error serializing crypto {}: {}", crypto.getId(), e.getMessage(), e);
                     }
@@ -63,11 +69,12 @@ public class RedisCacheServiceImpl implements CryptoCacheService {
                 return null;
             });
 
-            log.info("Successfully cached {} cryptos using pipeline", cryptos.size());
+            log.info("Successfully cached {} cryptos (with marketCapRank index) using pipeline", cryptos.size());
         } catch (Exception e) {
             log.error("Error during pipeline batch caching: {}", e.getMessage(), e);
             throw new CachePersistenceException("Failed to cache cryptos via pipeline", e);
         }
     }
-
 }
+
+

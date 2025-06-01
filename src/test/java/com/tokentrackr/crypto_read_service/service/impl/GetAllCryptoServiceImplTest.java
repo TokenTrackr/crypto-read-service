@@ -6,39 +6,42 @@ import com.tokentrackr.crypto_read_service.model.response.GetAllCryptoResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.core.*;
 
 import java.util.*;
-import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.*;
 
 class GetAllCryptoServiceImplTest {
 
     private RedisTemplate<String, Crypto> redisTemplate;
+    private StringRedisTemplate stringRedisTemplate;
     private GetAllCryptoServiceImpl service;
 
     @BeforeEach
     void setUp() {
         redisTemplate = Mockito.mock(RedisTemplate.class);
-        service = new GetAllCryptoServiceImpl(redisTemplate);
+        stringRedisTemplate = Mockito.mock(StringRedisTemplate.class);
+        service = new GetAllCryptoServiceImpl(redisTemplate, stringRedisTemplate);
     }
 
     @Test
     void noKeys_returnsEmptyResponse() {
-        when(redisTemplate.keys("crypto:*")).thenReturn(Collections.emptySet());
+        ZSetOperations<String, String> zSetOps = Mockito.mock(ZSetOperations.class);
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOps);
+        when(zSetOps.range("cryptos:all", 0, 9)).thenReturn(Collections.emptySet());
 
         GetAllCryptoResponse resp = service.getAllCrypto(
-                GetAllCryptoRequest.builder().page(1).size(10).marketCapRank(0).build());
+                GetAllCryptoRequest.builder().page(1).size(10).build());
+
         assertNotNull(resp);
         assertTrue(resp.getCrypto().isEmpty());
     }
 
     @Test
     void pagination_returnsCorrectSubset() {
-        // Create some dummy Crypto objects
+        // Prepare dummy Crypto objects
         Crypto c1 = new Crypto();
         c1.setId("1");
         Crypto c2 = new Crypto();
@@ -46,47 +49,80 @@ class GetAllCryptoServiceImplTest {
         Crypto c3 = new Crypto();
         c3.setId("3");
 
-        List<Crypto> list = Arrays.asList(c1, c2, c3);
+        // Keys matching the cryptos in Redis, in correct order
+        Set<String> pageKeys = new LinkedHashSet<>(Arrays.asList("crypto:1", "crypto:2", "crypto:3"));
 
-        // Use LinkedHashSet to preserve order of keys
-        Set<String> keys = new LinkedHashSet<>(list.stream()
-                .map(c -> "crypto:" + c.getId())
-                .collect(Collectors.toList()));
+        // Mock StringRedisTemplate ZSetOperations
+        ZSetOperations<String, String> zSetOps = Mockito.mock(ZSetOperations.class);
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOps);
 
-        // Mock RedisTemplate and ValueOperations
-        RedisTemplate<String, Crypto> redisTemplate = Mockito.mock(RedisTemplate.class);
+        // For page 1, size 3 -> range(0, 2) returns these keys
+        when(zSetOps.range("cryptos:all", 0, 2)).thenReturn(pageKeys);
+
+        // Mock RedisTemplate ValueOperations for multiGet
         ValueOperations<String, Crypto> valueOps = Mockito.mock(ValueOperations.class);
-
-        // When keys() is called, return our ordered set of keys
-        when(redisTemplate.keys("crypto:*")).thenReturn(keys);
-
-        // When opsForValue() is called, return mocked ValueOperations
         when(redisTemplate.opsForValue()).thenReturn(valueOps);
 
-        // When get() is called for each key, return the corresponding Crypto object
-        when(valueOps.get("crypto:1")).thenReturn(c1);
-        when(valueOps.get("crypto:2")).thenReturn(c2);
-        when(valueOps.get("crypto:3")).thenReturn(c3);
+        // Simulate multiGet returning corresponding cryptos in the same order
+        when(redisTemplate.opsForValue().multiGet(pageKeys))
+                .thenReturn(Arrays.asList(c1, c2, c3));
 
-        // Create the service instance with the mocked redisTemplate
-        GetAllCryptoServiceImpl service = new GetAllCryptoServiceImpl(redisTemplate);
-
-        // Request: page 2, size 1 means second page, one item per page -> expect c2 (id=2)
+        // Create request for page 1, size 3 (to get all three cryptos)
         GetAllCryptoRequest request = GetAllCryptoRequest.builder()
-                .page(2)  // Keep this
-                .size(1)
-                .marketCapRank(0)
+                .page(1)
+                .size(3)
                 .build();
 
-        // Call the method under test
+        // Call the service method
         GetAllCryptoResponse resp = service.getAllCrypto(request);
 
-        // Assert size is 1
-        assertEquals(1, resp.getCrypto().size());
-
-        // Assert returned Crypto is c2 (id=2)
-        assertSame(c2, resp.getCrypto().get(0));
+        // Assert response is correct
+        assertNotNull(resp);
+        assertEquals(3, resp.getCrypto().size());
+        assertSame(c1, resp.getCrypto().get(0));
+        assertSame(c2, resp.getCrypto().get(1));
+        assertSame(c3, resp.getCrypto().get(2));
     }
 
+    @Test
+    void pagination_partialPage_returnsCorrectSubset() {
+        // Prepare dummy Crypto objects
+        Crypto c2 = new Crypto();
+        c2.setId("2");
+        Crypto c3 = new Crypto();
+        c3.setId("3");
 
+        // Keys for page 2 (page=2, size=2 means indexes 2 to 3)
+        Set<String> pageKeys = new LinkedHashSet<>(Arrays.asList("crypto:2", "crypto:3"));
+
+        // Mock StringRedisTemplate ZSetOperations
+        ZSetOperations<String, String> zSetOps = Mockito.mock(ZSetOperations.class);
+        when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOps);
+
+        // page=2, size=2 -> range(2, 3)
+        when(zSetOps.range("cryptos:all", 2, 3)).thenReturn(pageKeys);
+
+        // Mock RedisTemplate ValueOperations for multiGet
+        ValueOperations<String, Crypto> valueOps = Mockito.mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+
+        // Simulate multiGet returning cryptos
+        when(redisTemplate.opsForValue().multiGet(pageKeys))
+                .thenReturn(Arrays.asList(c2, c3));
+
+        // Create request for page 2, size 2
+        GetAllCryptoRequest request = GetAllCryptoRequest.builder()
+                .page(2)
+                .size(2)
+                .build();
+
+        // Call the service method
+        GetAllCryptoResponse resp = service.getAllCrypto(request);
+
+        // Assert response correctness
+        assertNotNull(resp);
+        assertEquals(2, resp.getCrypto().size());
+        assertSame(c2, resp.getCrypto().get(0));
+        assertSame(c3, resp.getCrypto().get(1));
+    }
 }
