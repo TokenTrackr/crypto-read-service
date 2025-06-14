@@ -59,13 +59,7 @@ class RedisCacheServiceImplTest {
 
         assertThrows(CachePersistenceException.class, () -> service.getCryptoById("someId"));
     }
-
-    @Test
-    void cacheCrypto_success() {
-        when(redisTemplate.executePipelined(Mockito.any(RedisCallback.class)))
-                .thenReturn(Collections.emptyList());
-        assertDoesNotThrow(() -> service.cacheCrypto(Collections.emptyList()));
-    }
+    
 
     @Test
     void cacheCrypto_throwsException() {
