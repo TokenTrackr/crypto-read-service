@@ -1,13 +1,10 @@
 package com.tokentrackr.crypto_read_service.service.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tokentrackr.crypto_read_service.model.Crypto;
 import com.tokentrackr.crypto_read_service.model.request.GetAllCryptoRequest;
 import com.tokentrackr.crypto_read_service.model.response.GetAllCryptoResponse;
 import com.tokentrackr.crypto_read_service.service.interfaces.GetAllCryptoService;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.*;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
@@ -27,8 +24,8 @@ public class GetAllCryptoServiceImpl implements GetAllCryptoService {
     @Autowired
     public GetAllCryptoServiceImpl(RedisTemplate<String, Crypto> redisTemplate,
                                    StringRedisTemplate stringRedisTemplate) {
-        this.redisTemplate = redisTemplate;
-        this.stringRedisTemplate = stringRedisTemplate;
+        this.redisTemplate        = redisTemplate;
+        this.stringRedisTemplate  = stringRedisTemplate;
     }
 
     @Override
@@ -36,7 +33,7 @@ public class GetAllCryptoServiceImpl implements GetAllCryptoService {
         int page = Math.max(1, request.getPage());
         int size = Math.max(1, request.getSize());
         int start = (page - 1) * size;
-        int end = start + size - 1;  // inclusive index
+        int end   = start + size - 1;  // inclusive index
 
         // 1) Fetch the ZSET members (keys) in ascending marketCapRank order
         Set<String> pageOfKeys = stringRedisTemplate.opsForZSet()
@@ -60,6 +57,5 @@ public class GetAllCryptoServiceImpl implements GetAllCryptoService {
                 .build();
     }
 }
-
 
 
