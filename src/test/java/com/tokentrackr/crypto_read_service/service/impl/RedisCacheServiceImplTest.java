@@ -59,7 +59,7 @@ class RedisCacheServiceImplTest {
 
         assertThrows(CachePersistenceException.class, () -> service.getCryptoById("someId"));
     }
-    
+
 
     @Test
     void cacheCrypto_throwsException() {

@@ -9,6 +9,7 @@ import com.tokentrackr.crypto_read_service.service.interfaces.GetAllCryptoServic
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.data.redis.core.*;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Service;
@@ -24,6 +25,7 @@ public class GetAllCryptoServiceImpl implements GetAllCryptoService {
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
 
+    @Cacheable(value = "cryptos-page", key = "#page + '-' + #size")
     @Override
     public GetAllCryptoResponse getAllCrypto(GetAllCryptoRequest request) {
         int page = Math.max(1, request.getPage());

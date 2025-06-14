@@ -19,7 +19,7 @@ public class CryptoController {
     @GetMapping
     public ResponseEntity<GetAllCryptoResponse> getAllCrypto(@RequestParam(defaultValue = "0") int marketCapRank,
                                                      @RequestParam(defaultValue = "0") int page,
-                                                     @RequestParam(defaultValue = "300") int size) {
+                                                     @RequestParam(defaultValue = "250") int size) {
         GetAllCryptoRequest request = GetAllCryptoRequest.builder()
                 .marketCapRank(marketCapRank)
                 .page(page)
