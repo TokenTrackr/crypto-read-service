@@ -16,34 +16,42 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.stream.Collectors;
 
-@Slf4j
 @Service
-@RequiredArgsConstructor
 public class GetAllCryptoServiceImpl implements GetAllCryptoService {
+
     private static final String CRYPTOS_ZSET_KEY = "cryptos:all";
+
+    private final RedisTemplate<String, Crypto> redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;
-    private final ObjectMapper objectMapper;
+
+    @Autowired
+    public GetAllCryptoServiceImpl(RedisTemplate<String, Crypto> redisTemplate,
+                                   StringRedisTemplate stringRedisTemplate) {
+        this.redisTemplate = redisTemplate;
+        this.stringRedisTemplate = stringRedisTemplate;
+    }
 
     @Override
     public GetAllCryptoResponse getAllCrypto(GetAllCryptoRequest request) {
         int page = Math.max(1, request.getPage());
         int size = Math.max(1, request.getSize());
         int start = (page - 1) * size;
-        int end = start + size - 1;
+        int end = start + size - 1;  // inclusive index
 
-        // Single roundtrip to get full data
-        Set<String> serializedCryptos = stringRedisTemplate.opsForZSet()
+        // 1) Fetch the ZSET members (keys) in ascending marketCapRank order
+        Set<String> pageOfKeys = stringRedisTemplate.opsForZSet()
                 .range(CRYPTOS_ZSET_KEY, start, end);
 
-        List<Crypto> cryptos = serializedCryptos.stream()
-                .map(serialized -> {
-                    try {
-                        return objectMapper.readValue(serialized, Crypto.class);
-                    } catch (JsonProcessingException e) {
-                        log.warn("Deserialization failed for crypto data", e);
-                        return null;
-                    }
-                })
+        if (pageOfKeys == null || pageOfKeys.isEmpty()) {
+            return GetAllCryptoResponse.builder()
+                    .crypto(Collections.emptyList())
+                    .build();
+        }
+
+        // 2) Do a single MGET of those keys (each value is JSON→Crypto)
+        List<Crypto> cryptos = redisTemplate.opsForValue()
+                .multiGet(pageOfKeys)
+                .stream()
                 .filter(Objects::nonNull)
                 .collect(Collectors.toList());
 
@@ -52,5 +60,6 @@ public class GetAllCryptoServiceImpl implements GetAllCryptoService {
                 .build();
     }
 }
+
 
 

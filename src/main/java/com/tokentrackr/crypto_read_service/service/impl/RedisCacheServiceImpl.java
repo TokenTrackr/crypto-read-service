@@ -9,7 +9,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Service;
 
@@ -24,7 +23,6 @@ public class RedisCacheServiceImpl implements CryptoCacheService {
     private static final String CRYPTOS_ZSET_KEY      = "cryptos:all";
 
     private final RedisTemplate<String, Crypto> redisTemplate;
-    private final StringRedisTemplate stringRedisTemplate;
     private final StringRedisSerializer keySerializer = new StringRedisSerializer();
     private final ObjectMapper objectMapper;
 
@@ -43,25 +41,38 @@ public class RedisCacheServiceImpl implements CryptoCacheService {
     @Override
     public void cacheCrypto(List<Crypto> cryptos) {
         try {
-            stringRedisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+            redisTemplate.executePipelined((RedisCallback<Object>) connection -> {
+                byte[] zsetKeyBytes = keySerializer.serialize(CRYPTOS_ZSET_KEY);
+
                 for (Crypto crypto : cryptos) {
+                    String key = CRYPTO_CACHE_KEY_PREFIX + crypto.getId();
+                    byte[] keyBytes = keySerializer.serialize(key);
+
+                    if (keyBytes == null) {
+                        log.warn("Skipping crypto caching because serialized key was null for id={}", crypto.getId());
+                        continue;
+                    }
+
                     try {
-                        String serializedCrypto = objectMapper.writeValueAsString(crypto);
-                        connection.zSetCommands().zAdd(
-                                CRYPTOS_ZSET_KEY.getBytes(),
-                                crypto.getMarketCapRank(),
-                                serializedCrypto.getBytes()  // Store FULL DATA as value
-                        );
+                        byte[] valueBytes = objectMapper.writeValueAsBytes(crypto);
+                        // 1) Store JSON under "crypto:<id>"
+                        connection.stringCommands().set(keyBytes, valueBytes);
+
+                        // 2) ZADD into "cryptos:all" with score = marketCapRank
+                        double score = (double) crypto.getMarketCapRank();
+                        connection.zSetCommands().zAdd(zsetKeyBytes, score, keyBytes);
+
                     } catch (JsonProcessingException e) {
-                        log.error("Error serializing crypto {}: {}", crypto.getId(), e.getMessage());
+                        log.error("Error serializing crypto {}: {}", crypto.getId(), e.getMessage(), e);
                     }
                 }
                 return null;
             });
-            log.info("Cached {} cryptos in ZSET with full data payload", cryptos.size());
+
+            log.info("Successfully cached {} cryptos (with marketCapRank index) using pipeline", cryptos.size());
         } catch (Exception e) {
-            log.error("Pipeline caching failed", e);
-            throw new CachePersistenceException("ZSET caching error", e);
+            log.error("Error during pipeline batch caching: {}", e.getMessage(), e);
+            throw new CachePersistenceException("Failed to cache cryptos via pipeline", e);
         }
     }
 }

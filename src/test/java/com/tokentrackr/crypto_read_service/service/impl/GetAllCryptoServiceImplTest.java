@@ -1,15 +1,12 @@
 package com.tokentrackr.crypto_read_service.service.impl;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tokentrackr.crypto_read_service.model.Crypto;
 import com.tokentrackr.crypto_read_service.model.request.GetAllCryptoRequest;
 import com.tokentrackr.crypto_read_service.model.response.GetAllCryptoResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.springframework.data.redis.core.StringRedisTemplate;
-import org.springframework.data.redis.core.ZSetOperations;
+import org.springframework.data.redis.core.*;
 
 import java.util.*;
 
@@ -18,20 +15,20 @@ import static org.mockito.Mockito.*;
 
 class GetAllCryptoServiceImplTest {
 
+    private RedisTemplate<String, Crypto> redisTemplate;
     private StringRedisTemplate stringRedisTemplate;
-    private ObjectMapper objectMapper;
     private GetAllCryptoServiceImpl service;
 
     @BeforeEach
     void setUp() {
-        stringRedisTemplate = mock(StringRedisTemplate.class);
-        objectMapper = new ObjectMapper(); // real ObjectMapper
-        service = new GetAllCryptoServiceImpl(stringRedisTemplate, objectMapper);
+        redisTemplate = Mockito.mock(RedisTemplate.class);
+        stringRedisTemplate = Mockito.mock(StringRedisTemplate.class);
+        service = new GetAllCryptoServiceImpl(redisTemplate, stringRedisTemplate);
     }
 
     @Test
     void noKeys_returnsEmptyResponse() {
-        ZSetOperations<String, String> zSetOps = mock(ZSetOperations.class);
+        ZSetOperations<String, String> zSetOps = Mockito.mock(ZSetOperations.class);
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOps);
         when(zSetOps.range("cryptos:all", 0, 9)).thenReturn(Collections.emptySet());
 
@@ -43,59 +40,89 @@ class GetAllCryptoServiceImplTest {
     }
 
     @Test
-    void pagination_returnsCorrectSubset() throws JsonProcessingException {
-        Crypto c1 = new Crypto(); c1.setId("1");
-        Crypto c2 = new Crypto(); c2.setId("2");
-        Crypto c3 = new Crypto(); c3.setId("3");
+    void pagination_returnsCorrectSubset() {
+        // Prepare dummy Crypto objects
+        Crypto c1 = new Crypto();
+        c1.setId("1");
+        Crypto c2 = new Crypto();
+        c2.setId("2");
+        Crypto c3 = new Crypto();
+        c3.setId("3");
 
-        String s1 = objectMapper.writeValueAsString(c1);
-        String s2 = objectMapper.writeValueAsString(c2);
-        String s3 = objectMapper.writeValueAsString(c3);
+        // Keys matching the cryptos in Redis, in correct order
+        Set<String> pageKeys = new LinkedHashSet<>(Arrays.asList("crypto:1", "crypto:2", "crypto:3"));
 
-        Set<String> serializedSet = new LinkedHashSet<>(Arrays.asList(s1, s2, s3));
-
-        ZSetOperations<String, String> zSetOps = mock(ZSetOperations.class);
+        // Mock StringRedisTemplate ZSetOperations
+        ZSetOperations<String, String> zSetOps = Mockito.mock(ZSetOperations.class);
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOps);
-        when(zSetOps.range("cryptos:all", 0, 2)).thenReturn(serializedSet);
 
+        // For page 1, size 3 -> range(0, 2) returns these keys
+        when(zSetOps.range("cryptos:all", 0, 2)).thenReturn(pageKeys);
+
+        // Mock RedisTemplate ValueOperations for multiGet
+        ValueOperations<String, Crypto> valueOps = Mockito.mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+
+        // Simulate multiGet returning corresponding cryptos in the same order
+        when(redisTemplate.opsForValue().multiGet(pageKeys))
+                .thenReturn(Arrays.asList(c1, c2, c3));
+
+        // Create request for page 1, size 3 (to get all three cryptos)
         GetAllCryptoRequest request = GetAllCryptoRequest.builder()
                 .page(1)
                 .size(3)
                 .build();
 
+        // Call the service method
         GetAllCryptoResponse resp = service.getAllCrypto(request);
 
+        // Assert response is correct
         assertNotNull(resp);
         assertEquals(3, resp.getCrypto().size());
-        assertEquals("1", resp.getCrypto().get(0).getId());
-        assertEquals("2", resp.getCrypto().get(1).getId());
-        assertEquals("3", resp.getCrypto().get(2).getId());
+        assertSame(c1, resp.getCrypto().get(0));
+        assertSame(c2, resp.getCrypto().get(1));
+        assertSame(c3, resp.getCrypto().get(2));
     }
 
     @Test
-    void pagination_partialPage_returnsCorrectSubset() throws JsonProcessingException {
-        Crypto c2 = new Crypto(); c2.setId("2");
-        Crypto c3 = new Crypto(); c3.setId("3");
+    void pagination_partialPage_returnsCorrectSubset() {
+        // Prepare dummy Crypto objects
+        Crypto c2 = new Crypto();
+        c2.setId("2");
+        Crypto c3 = new Crypto();
+        c3.setId("3");
 
-        String s2 = objectMapper.writeValueAsString(c2);
-        String s3 = objectMapper.writeValueAsString(c3);
+        // Keys for page 2 (page=2, size=2 means indexes 2 to 3)
+        Set<String> pageKeys = new LinkedHashSet<>(Arrays.asList("crypto:2", "crypto:3"));
 
-        Set<String> serializedSet = new LinkedHashSet<>(Arrays.asList(s2, s3));
-
-        ZSetOperations<String, String> zSetOps = mock(ZSetOperations.class);
+        // Mock StringRedisTemplate ZSetOperations
+        ZSetOperations<String, String> zSetOps = Mockito.mock(ZSetOperations.class);
         when(stringRedisTemplate.opsForZSet()).thenReturn(zSetOps);
-        when(zSetOps.range("cryptos:all", 2, 3)).thenReturn(serializedSet);
 
+        // page=2, size=2 -> range(2, 3)
+        when(zSetOps.range("cryptos:all", 2, 3)).thenReturn(pageKeys);
+
+        // Mock RedisTemplate ValueOperations for multiGet
+        ValueOperations<String, Crypto> valueOps = Mockito.mock(ValueOperations.class);
+        when(redisTemplate.opsForValue()).thenReturn(valueOps);
+
+        // Simulate multiGet returning cryptos
+        when(redisTemplate.opsForValue().multiGet(pageKeys))
+                .thenReturn(Arrays.asList(c2, c3));
+
+        // Create request for page 2, size 2
         GetAllCryptoRequest request = GetAllCryptoRequest.builder()
                 .page(2)
                 .size(2)
                 .build();
 
+        // Call the service method
         GetAllCryptoResponse resp = service.getAllCrypto(request);
 
+        // Assert response correctness
         assertNotNull(resp);
         assertEquals(2, resp.getCrypto().size());
-        assertEquals("2", resp.getCrypto().get(0).getId());
-        assertEquals("3", resp.getCrypto().get(1).getId());
+        assertSame(c2, resp.getCrypto().get(0));
+        assertSame(c3, resp.getCrypto().get(1));
     }
 }
