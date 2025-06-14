@@ -7,7 +7,8 @@ import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 public interface CryptoCacheService {
-    Optional<Crypto> getCryptoById(String id);
+//    Optional<Crypto> getCryptoById(String id);
 
     void cacheCrypto(List<Crypto> cryptos);
+    public void storeCryptoPage(int page, int size, List<Crypto> cryptos);
 }

@@ -1,6 +1,7 @@
 package com.tokentrackr.crypto_read_service.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tokentrackr.crypto_read_service.model.Crypto;
 import com.tokentrackr.crypto_read_service.model.request.GetAllCryptoRequest;
@@ -23,34 +24,59 @@ public class GetAllCryptoServiceImpl implements GetAllCryptoService {
     private static final String CRYPTOS_ZSET_KEY = "cryptos:all";
     private final StringRedisTemplate stringRedisTemplate;
     private final ObjectMapper objectMapper;
+    private final RedisTemplate<String, String> redisTemplate;
 
-    @Override
     public GetAllCryptoResponse getAllCrypto(GetAllCryptoRequest request) {
-        int page = Math.max(1, request.getPage());
+        int page = Math.max(0, request.getPage());
         int size = Math.max(1, request.getSize());
-        int start = (page - 1) * size;
-        int end = start + size - 1;
+        String key = "crypto:page:" + page + ":" + size;
 
-        // Single roundtrip to get full data
-        Set<String> serializedCryptos = stringRedisTemplate.opsForZSet()
-                .range(CRYPTOS_ZSET_KEY, start, end);
+        String jsonArray = redisTemplate.opsForValue().get(key);
 
-        List<Crypto> cryptos = serializedCryptos.stream()
-                .map(serialized -> {
-                    try {
-                        return objectMapper.readValue(serialized, Crypto.class);
-                    } catch (JsonProcessingException e) {
-                        log.warn("Deserialization failed for crypto data", e);
-                        return null;
-                    }
-                })
-                .filter(Objects::nonNull)
-                .collect(Collectors.toList());
+        if (jsonArray == null) {
+            // fallback: return empty, or fetch from DB if desired
+            return GetAllCryptoResponse.builder().crypto(Collections.emptyList()).build();
+        }
 
-        return GetAllCryptoResponse.builder()
-                .crypto(cryptos)
-                .build();
+        try {
+            List<Crypto> cryptos = objectMapper.readValue(
+                    jsonArray, new TypeReference<List<Crypto>>() {}
+            );
+
+            return GetAllCryptoResponse.builder().crypto(cryptos).build();
+        } catch (JsonProcessingException e) {
+            log.warn("Failed to parse cached crypto page", e);
+            return GetAllCryptoResponse.builder().crypto(Collections.emptyList()).build();
+        }
     }
+
+//    @Override
+//    public GetAllCryptoResponse getAllCrypto(GetAllCryptoRequest request) {
+//        int page = Math.max(1, request.getPage());
+//        int size = Math.max(1, request.getSize());
+//        int start = (page - 1) * size;
+//        int end = start + size - 1;
+//
+//        // Single roundtrip to get full data
+//        Set<String> serializedCryptos = stringRedisTemplate.opsForZSet()
+//                .range(CRYPTOS_ZSET_KEY, start, end);
+//
+//        List<Crypto> cryptos = serializedCryptos.stream()
+//                .map(serialized -> {
+//                    try {
+//                        return objectMapper.readValue(serialized, Crypto.class);
+//                    } catch (JsonProcessingException e) {
+//                        log.warn("Deserialization failed for crypto data", e);
+//                        return null;
+//                    }
+//                })
+//                .filter(Objects::nonNull)
+//                .collect(Collectors.toList());
+//
+//        return GetAllCryptoResponse.builder()
+//                .crypto(cryptos)
+//                .build();
+//    }
 }
 
 

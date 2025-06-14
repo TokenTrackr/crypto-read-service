@@ -13,7 +13,9 @@ import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Service;
 
+import java.time.Duration;
 import java.util.*;
+import java.util.concurrent.TimeUnit;
 
 @Service
 @Slf4j
@@ -23,20 +25,31 @@ public class RedisCacheServiceImpl implements CryptoCacheService {
     private static final String CRYPTO_CACHE_KEY_PREFIX = "crypto:";
     private static final String CRYPTOS_ZSET_KEY      = "cryptos:all";
 
-    private final RedisTemplate<String, Crypto> redisTemplate;
+    private final RedisTemplate<String, String> redisTemplate;
     private final StringRedisTemplate stringRedisTemplate;
     private final StringRedisSerializer keySerializer = new StringRedisSerializer();
     private final ObjectMapper objectMapper;
 
+//    @Override
+//    public Optional<Crypto> getCryptoById(String id) {
+//        try {
+//            String key = CRYPTO_CACHE_KEY_PREFIX + id;
+//            Crypto data = redisTemplate.opsForValue().get(key);
+//            return Optional.ofNullable(data);
+//        } catch (Exception e) {
+//            log.error("Error retrieving crypto data: {}", e.getMessage(), e);
+//            throw new CachePersistenceException("Failed to retrieve crypto data", e);
+//        }
+//    }
+
     @Override
-    public Optional<Crypto> getCryptoById(String id) {
+    public void storeCryptoPage(int page, int size, List<Crypto> cryptos) {
         try {
-            String key = CRYPTO_CACHE_KEY_PREFIX + id;
-            Crypto data = redisTemplate.opsForValue().get(key);
-            return Optional.ofNullable(data);
-        } catch (Exception e) {
-            log.error("Error retrieving crypto data: {}", e.getMessage(), e);
-            throw new CachePersistenceException("Failed to retrieve crypto data", e);
+            String json = objectMapper.writeValueAsString(cryptos);
+            String key = "crypto:page:" + page + ":" + size;
+            redisTemplate.opsForValue().set(key, json, 10, TimeUnit.MINUTES);
+        } catch (JsonProcessingException e) {
+            log.error("Failed to serialize crypto page", e);
         }
     }
 
