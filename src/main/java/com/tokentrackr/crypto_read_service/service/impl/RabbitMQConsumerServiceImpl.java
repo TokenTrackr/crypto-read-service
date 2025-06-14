@@ -25,7 +25,7 @@ public class RabbitMQConsumerServiceImpl {
     public void consumeMessage(List<Crypto> cryptoMessages) {
         try {
             log.info("Processing batch of {} crypto messages", cryptoMessages.size());
-            cryptoCacheService.storeCryptoPage(0,250,cryptoMessages);
+            cryptoCacheService.cacheCrypto(cryptoMessages);
             log.info("Successfully processed batch of {} crypto messages", cryptoMessages.size());
         } catch (Exception e) {
             log.error("Error processing batch crypto messages: {}", e.getMessage(), e);

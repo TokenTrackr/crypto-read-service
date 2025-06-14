@@ -38,27 +38,27 @@ class RedisCacheServiceImplTest {
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
     }
 
-//    @Test
-//    void getCryptoById_success() {
-//        String cryptoId = "bitcoin";
-//        Crypto crypto = new Crypto();
-//        crypto.setId(cryptoId);
-//
-//        when(valueOperations.get("crypto:" + cryptoId)).thenReturn(crypto);
-//
-//        Optional<Crypto> result = service.getCryptoById(cryptoId);
-//
-//        assertTrue(result.isPresent());
-//        assertEquals(cryptoId, result.get().getId());
-//        verify(valueOperations).get("crypto:" + cryptoId);
-//    }
-//
-//    @Test
-//    void getCryptoById_throwsException_whenRedisFails() {
-//        when(valueOperations.get(anyString())).thenThrow(new RuntimeException("Redis failure"));
-//
-//        assertThrows(CachePersistenceException.class, () -> service.getCryptoById("someId"));
-//    }
+    @Test
+    void getCryptoById_success() {
+        String cryptoId = "bitcoin";
+        Crypto crypto = new Crypto();
+        crypto.setId(cryptoId);
+
+        when(valueOperations.get("crypto:" + cryptoId)).thenReturn(crypto);
+
+        Optional<Crypto> result = service.getCryptoById(cryptoId);
+
+        assertTrue(result.isPresent());
+        assertEquals(cryptoId, result.get().getId());
+        verify(valueOperations).get("crypto:" + cryptoId);
+    }
+
+    @Test
+    void getCryptoById_throwsException_whenRedisFails() {
+        when(valueOperations.get(anyString())).thenThrow(new RuntimeException("Redis failure"));
+
+        assertThrows(CachePersistenceException.class, () -> service.getCryptoById("someId"));
+    }
 
 
     @Test
