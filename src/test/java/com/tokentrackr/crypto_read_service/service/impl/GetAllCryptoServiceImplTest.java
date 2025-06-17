@@ -129,4 +129,5 @@ class GetAllCryptoServiceImplTest {
         assertSame(c2, resp.getCrypto().get(0));
         assertSame(c3, resp.getCrypto().get(1));
     }
+
 }
