@@ -5,11 +5,15 @@ import com.tokentrackr.crypto_read_service.model.request.GetAllCryptoRequest;
 import com.tokentrackr.crypto_read_service.model.response.GetAllCryptoResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
 import org.mockito.Mockito;
+import org.mockito.MockitoAnnotations;
 import org.springframework.data.redis.core.*;
 
 import java.util.*;
 
+import static org.assertj.core.api.AssertionsForInterfaceTypes.assertThat;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
