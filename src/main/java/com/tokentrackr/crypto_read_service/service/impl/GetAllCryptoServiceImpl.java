@@ -4,10 +4,8 @@ import com.tokentrackr.crypto_read_service.model.Crypto;
 import com.tokentrackr.crypto_read_service.model.request.GetAllCryptoRequest;
 import com.tokentrackr.crypto_read_service.model.response.GetAllCryptoResponse;
 import com.tokentrackr.crypto_read_service.service.interfaces.GetAllCryptoService;
-import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.*;
-import org.springframework.data.redis.serializer.StringRedisSerializer;
 import org.springframework.stereotype.Service;
 
 import java.util.*;

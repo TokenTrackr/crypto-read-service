@@ -5,6 +5,9 @@ import org.springframework.boot.test.context.SpringBootTest;
 
 @SpringBootTest
 class CryptoReadServiceApplicationTests {
-
+    @Test
+    void contextLoads() {
+        // This will fail if the Spring context cannot start
+    }
 
 }
