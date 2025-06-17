@@ -1,18 +1,21 @@
 package com.tokentrackr.crypto_read_service.service.impl;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.tokentrackr.crypto_read_service.exception.CachePersistenceException;
 import com.tokentrackr.crypto_read_service.model.Crypto;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.mockito.ArgumentCaptor;
-import org.mockito.Captor;
-import org.mockito.InjectMocks;
-import org.mockito.Mock;
+import org.mockito.*;
 import org.mockito.MockitoAnnotations;
+import org.springframework.data.redis.connection.RedisConnection;
+import org.springframework.data.redis.connection.RedisConnectionFactory;
+import org.springframework.data.redis.connection.RedisStringCommands;
+import org.springframework.data.redis.connection.RedisZSetCommands;
 import org.springframework.data.redis.core.RedisCallback;
 import org.springframework.data.redis.core.RedisTemplate;
 import org.springframework.data.redis.core.ValueOperations;
+import org.springframework.data.redis.serializer.StringRedisSerializer;
 
 import java.util.Collections;
 import java.util.List;
@@ -29,21 +32,42 @@ class RedisCacheServiceImplTest {
     private RedisTemplate<String, Crypto> redisTemplate;
 
     @Mock
+    private RedisConnectionFactory connectionFactory;
+
+    @Mock
     private ValueOperations<String, Crypto> valueOperations;
 
     @Mock
-    private RedisCallback<Object> redisCallback;
+    private RedisConnection redisConnection;
+
+    @Mock
+    private RedisStringCommands stringCommands;
+
+    @Mock
+    private RedisZSetCommands zSetCommands;
+
+    @Mock
+    private ObjectMapper objectMapper;
 
     @InjectMocks
     private RedisCacheServiceImpl service;
 
-    @Captor
-    private ArgumentCaptor<RedisCallback<Object>> redisCallbackCaptor;
+    private final StringRedisSerializer keySerializer = new StringRedisSerializer();
 
     @BeforeEach
     void setup() {
         MockitoAnnotations.openMocks(this);
+
+        // stub opsForValue
         when(redisTemplate.opsForValue()).thenReturn(valueOperations);
+
+        // stub connection factory chain
+        when(redisTemplate.getConnectionFactory()).thenReturn(connectionFactory);
+        when(connectionFactory.getConnection()).thenReturn(redisConnection);
+
+        // stub low-level commands
+        when(redisConnection.stringCommands()).thenReturn(stringCommands);
+        when(redisConnection.zSetCommands()).thenReturn(zSetCommands);
     }
 
     @Test
@@ -83,34 +107,76 @@ class RedisCacheServiceImplTest {
     }
 
     @Test
-    void cacheCrypto_ProcessesValidCryptosSuccessfully() {
+    void cacheCrypto_HandlesSerializationFailureGracefully() throws Exception {
         Crypto bitcoin = createCrypto("bitcoin", 1);
+        when(objectMapper.writeValueAsBytes(bitcoin))
+                .thenThrow(JsonProcessingException.class);
+
         assertDoesNotThrow(() -> service.cacheCrypto(List.of(bitcoin)));
         verify(redisTemplate).executePipelined(any(RedisCallback.class));
     }
 
     @Test
-    void cacheCrypto_SkipsCryptoWhenKeySerializationFails() {
-        Crypto invalidCrypto = createCrypto(null, 1);
-        service.cacheCrypto(List.of(invalidCrypto));
-        verify(redisTemplate).executePipelined(any(RedisCallback.class));
-    }
-
-    @Test
-    void cacheCrypto_HandlesSerializationFailureGracefully() {
+    void cacheCrypto_ExecutesRedisCommandsCorrectly() throws Exception {
         Crypto bitcoin = createCrypto("bitcoin", 1);
-        assertDoesNotThrow(() -> service.cacheCrypto(List.of(bitcoin)));
-        verify(redisTemplate).executePipelined(any(RedisCallback.class));
+        when(objectMapper.writeValueAsBytes(bitcoin)).thenReturn("data".getBytes());
+
+        // Capture the RedisCallback
+        ArgumentCaptor<RedisCallback<Object>> callbackCaptor = ArgumentCaptor.forClass(RedisCallback.class);
+        service.cacheCrypto(List.of(bitcoin));
+
+        verify(redisTemplate).executePipelined(callbackCaptor.capture());
+
+        // Execute the callback with our mocked connection
+        RedisCallback<Object> callback = callbackCaptor.getValue();
+        callback.doInRedis(redisConnection);
+
+        // Verify Redis interactions
+        byte[] expectedKey = keySerializer.serialize("crypto:bitcoin");
+        byte[] expectedZSetKey = keySerializer.serialize("cryptos:all");
+
+        verify(stringCommands).set(eq(expectedKey), any(byte[].class));
+        verify(zSetCommands).zAdd(eq(expectedZSetKey), eq(1.0), eq(expectedKey));
     }
 
     @Test
-    void cacheCrypto_ProcessesMultipleCryptosWithMixedResults() {
-        Crypto valid1 = createCrypto("bitcoin", 1);
-        Crypto valid2 = createCrypto("ethereum", 2);
-        Crypto invalid = createCrypto(null, 3);
+    void cacheCrypto_AddsToSortedSetWithCorrectRank() throws Exception {
+        Crypto ethereum = createCrypto("ethereum", 2);
+        when(objectMapper.writeValueAsBytes(ethereum)).thenReturn("data".getBytes());
 
-        service.cacheCrypto(List.of(valid1, invalid, valid2));
-        verify(redisTemplate).executePipelined(any(RedisCallback.class));
+        ArgumentCaptor<RedisCallback<Object>> callbackCaptor = ArgumentCaptor.forClass(RedisCallback.class);
+        service.cacheCrypto(List.of(ethereum));
+
+        verify(redisTemplate).executePipelined(callbackCaptor.capture());
+        callbackCaptor.getValue().doInRedis(redisConnection);
+
+        byte[] expectedKey = keySerializer.serialize("crypto:ethereum");
+        byte[] expectedZSetKey = keySerializer.serialize("cryptos:all");
+
+        verify(zSetCommands).zAdd(eq(expectedZSetKey), eq(2.0), eq(expectedKey));
+    }
+
+    @Test
+    void cacheCrypto_HandlesMultipleCryptosInPipeline() throws Exception {
+        Crypto bitcoin = createCrypto("bitcoin", 1);
+        Crypto ethereum = createCrypto("ethereum", 2);
+        when(objectMapper.writeValueAsBytes(bitcoin)).thenReturn("data1".getBytes());
+        when(objectMapper.writeValueAsBytes(ethereum)).thenReturn("data2".getBytes());
+
+        ArgumentCaptor<RedisCallback<Object>> callbackCaptor = ArgumentCaptor.forClass(RedisCallback.class);
+        service.cacheCrypto(List.of(bitcoin, ethereum));
+
+        verify(redisTemplate).executePipelined(callbackCaptor.capture());
+        callbackCaptor.getValue().doInRedis(redisConnection);
+
+        byte[] bitcoinKey = keySerializer.serialize("crypto:bitcoin");
+        byte[] ethereumKey = keySerializer.serialize("crypto:ethereum");
+        byte[] zSetKey = keySerializer.serialize("cryptos:all");
+
+        verify(stringCommands).set(eq(bitcoinKey), any(byte[].class));
+        verify(stringCommands).set(eq(ethereumKey), any(byte[].class));
+        verify(zSetCommands).zAdd(eq(zSetKey), eq(1.0), eq(bitcoinKey));
+        verify(zSetCommands).zAdd(eq(zSetKey), eq(2.0), eq(ethereumKey));
     }
 
     @Test
@@ -123,10 +189,20 @@ class RedisCacheServiceImplTest {
     }
 
     @Test
-    void cacheCrypto_HandlesZeroMarketCapRank() {
+    void cacheCrypto_HandlesZeroMarketCapRank() throws Exception {
         Crypto zeroRank = createCrypto("litecoin", 0);
-        assertDoesNotThrow(() -> service.cacheCrypto(List.of(zeroRank)));
-        verify(redisTemplate).executePipelined(any(RedisCallback.class));
+        when(objectMapper.writeValueAsBytes(zeroRank)).thenReturn("data".getBytes());
+
+        ArgumentCaptor<RedisCallback<Object>> callbackCaptor = ArgumentCaptor.forClass(RedisCallback.class);
+        service.cacheCrypto(List.of(zeroRank));
+
+        verify(redisTemplate).executePipelined(callbackCaptor.capture());
+        callbackCaptor.getValue().doInRedis(redisConnection);
+
+        byte[] expectedKey = keySerializer.serialize("crypto:litecoin");
+        byte[] expectedZSetKey = keySerializer.serialize("cryptos:all");
+
+        verify(zSetCommands).zAdd(eq(expectedZSetKey), eq(0.0), eq(expectedKey));
     }
 
     private Crypto createCrypto(String id, int marketCapRank) {
