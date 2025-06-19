@@ -3,6 +3,8 @@ package com.tokentrackr.crypto_read_service.controller;
 import com.tokentrackr.crypto_read_service.model.request.GetAllCryptoRequest;
 import com.tokentrackr.crypto_read_service.model.response.GetAllCryptoResponse;
 import com.tokentrackr.crypto_read_service.service.interfaces.GetAllCryptoService;
+import io.micrometer.core.instrument.DistributionSummary;
+import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -14,6 +16,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Collections;
 
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -29,13 +33,20 @@ class CryptoControllerTest {
     @MockitoBean
     private GetAllCryptoService getAllCryptoService;
 
+    @MockitoBean
+    private MeterRegistry meterRegistry;
+
     @Test
     void getAllCrypto_returnsEmptyList() throws Exception {
+        // Mock the DistributionSummary
+        DistributionSummary mockSummary = mock(DistributionSummary.class);
+        when(meterRegistry.summary("crypto_assets_returned")).thenReturn(mockSummary);
+
         GetAllCryptoResponse response = GetAllCryptoResponse.builder()
                 .crypto(Collections.emptyList())
                 .build();
 
-        when(getAllCryptoService.getAllCrypto(org.mockito.ArgumentMatchers.any(GetAllCryptoRequest.class)))
+        when(getAllCryptoService.getAllCrypto(any(GetAllCryptoRequest.class)))
                 .thenReturn(response);
 
         mockMvc.perform(get("/crypto")
