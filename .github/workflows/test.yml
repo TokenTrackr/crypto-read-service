@@ -43,6 +43,8 @@ jobs:
   docker-build-and-push:
     needs: build-and-analyze
     runs-on: ubuntu-latest
+    outputs:
+      image: ${{ steps.set-image.outputs.image }}
     steps:
       - uses: actions/checkout@v3
 
@@ -65,17 +67,18 @@ jobs:
           password: ${{ secrets.DOCKER_PASSWORD }}
 
       - name: Build & push Docker image with short SHA tag
+        id: build-push
         run: |
-          # short SHA for tagging
           SHORT_SHA=${GITHUB_SHA::7}
           IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}/crypto-read-service:${SHORT_SHA}
-
+          echo "Building and pushing image: $IMAGE_NAME"
           docker build -t "$IMAGE_NAME" .
           docker push "$IMAGE_NAME"
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
       - name: Set output image name
         id: set-image
-        run: echo "::set-output name=image::$IMAGE_NAME"
+        run: echo "image=${IMAGE_NAME}" >> $GITHUB_OUTPUT
 
   deploy-to-aks:
     needs: docker-build-and-push
@@ -83,33 +86,21 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
-      # 1) Authenticate to AKS using your Service Principal JSON
-      - name: “Set AKS context”
+      - name: Set AKS context
         uses: azure/aks-set-context@v1
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           resource-group: TokenTrackrRG
           cluster-name: TokenTrackrCluster
 
-      # 2) Render the Kubernetes manifest
       - name: Render k8s manifest
         run: |
-          # grab the image from the previous job
-          export IMAGE_NAME=${{ needs.docker-build-and-push.outputs.image }}
-      
-          # optionally: sanity‑check
-          echo "Rendering with IMAGE_NAME=$IMAGE_NAME"
-      
-          # substitute only that var in your template
-          envsubst '${IMAGE_NAME}' \
-            < k8s/crypto-read-service.yaml \
-            > k8s/crypto-read-service.generated.yaml
-      
-          # debug: show the first few lines to confirm
-          head -n 10 k8s/crypto-read-service.generated.yaml
+          IMAGE_NAME=${{ needs.docker-build-and-push.outputs.image }}
+          echo "Using image: $IMAGE_NAME"
+          envsubst '${IMAGE_NAME}' < k8s/crypto-read-service.yaml > k8s/crypto-read-service.generated.yaml
+          echo "Generated manifest preview:"
+          cat k8s/crypto-read-service.generated.yaml | grep -A 5 'image:'
 
-
-      # 3) Deploy to Kubernetes
       - name: kubectl apply
         run: |
           kubectl apply -f k8s/crypto-read-service.generated.yaml
