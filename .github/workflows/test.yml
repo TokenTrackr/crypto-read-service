@@ -37,7 +37,7 @@ jobs:
           ./mvnw sonar:sonar \
             -Dsonar.organization=tokentrackr \
             -Dsonar.projectKey=TokenTrackr_crypto-read-service \
-            -Dsonar.host.url=https://sonarcloud.io" \
+            -Dsonar.host.url=https://sonarcloud.io \
             -Dsonar.token=$SONAR_TOKEN
 
   docker-build-and-push:
