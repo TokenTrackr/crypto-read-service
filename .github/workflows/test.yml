@@ -93,27 +93,40 @@ jobs:
           resource-group: TokenTrackrRG
           cluster-name: TokenTrackrCluster
 
-      - name: Render k8s manifest
+      - name: Render and Apply K8s Manifest
         env:
           IMAGE_NAME: ${{ needs.docker-build-and-push.outputs.image }}
         run: |
-          echo "Using IMAGE_NAME: $IMAGE_NAME"
-          echo "=== Original YAML (image section) ==="
-          grep -A 5 'image:' k8s/crypto-read-service.yaml
-          
-          # Replace placeholder with sed
-          sed "s|\${IMAGE_NAME}|$IMAGE_NAME|g" k8s/crypto-read-service.yaml > k8s/crypto-read-service.generated.yaml
-          
-          echo "=== Generated YAML (image section) ==="
-          grep -A 5 'image:' k8s/crypto-read-service.generated.yaml
-          echo "=== Full generated YAML ==="
-          cat k8s/crypto-read-service.generated.yaml
-          
-          # Verify the replacement worked
-          if ! grep -q "$IMAGE_NAME" k8s/crypto-read-service.generated.yaml; then
-            echo "ERROR: Image substitution failed!"
+          # 1. Debug the input value
+          echo "IMAGE_NAME value: '$IMAGE_NAME'"
+          if [ -z "$IMAGE_NAME" ]; then
+            echo "❌ ERROR: IMAGE_NAME is empty!"
+            echo "Docker build outputs:"
+            echo "${{ toJSON(needs.docker-build-and-push.outputs) }}"
             exit 1
           fi
+      
+          # 2. Verify template file exists
+          if [ ! -f "k8s/crypto-read-service.yaml" ]; then
+            echo "❌ ERROR: Template file missing!"
+            ls -la k8s/
+            exit 1
+          fi
+      
+          # 3. Perform substitution with verification
+          sed "s|\${IMAGE_NAME}|$IMAGE_NAME|g" k8s/crypto-read-service.yaml > k8s/crypto-read-service.generated.yaml
+          echo "=== Generated YAML ==="
+          cat k8s/crypto-read-service.generated.yaml
+      
+          # 4. Validate the replacement
+          if grep -q '\${IMAGE_NAME}' k8s/crypto-read-service.generated.yaml; then
+            echo "❌ ERROR: Variable substitution failed!"
+            exit 1
+          fi
+      
+          # 5. Apply with strict validation
+          kubectl apply -f k8s/crypto-read-service.generated.yaml --dry-run=server --validate=true
+          kubectl apply -f k8s/crypto-read-service.generated.yaml
 
       - name: kubectl apply
         run: |
