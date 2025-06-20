@@ -98,10 +98,22 @@ jobs:
           IMAGE_NAME: ${{ needs.docker-build-and-push.outputs.image }}
         run: |
           echo "Using IMAGE_NAME: $IMAGE_NAME"
-          command -v envsubst >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y gettext-base; }
-          envsubst '${IMAGE_NAME}' < k8s/crypto-read-service.yaml > k8s/crypto-read-service.generated.yaml
+          echo "=== Original YAML (image section) ==="
+          grep -A 5 'image:' k8s/crypto-read-service.yaml
+          
+          # Replace placeholder with sed
+          sed "s|\${IMAGE_NAME}|$IMAGE_NAME|g" k8s/crypto-read-service.yaml > k8s/crypto-read-service.generated.yaml
+          
           echo "=== Generated YAML (image section) ==="
           grep -A 5 'image:' k8s/crypto-read-service.generated.yaml
+          echo "=== Full generated YAML ==="
+          cat k8s/crypto-read-service.generated.yaml
+          
+          # Verify the replacement worked
+          if ! grep -q "$IMAGE_NAME" k8s/crypto-read-service.generated.yaml; then
+            echo "ERROR: Image substitution failed!"
+            exit 1
+          fi
 
       - name: kubectl apply
         run: |
