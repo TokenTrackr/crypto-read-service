@@ -74,14 +74,11 @@ jobs:
           echo "Building and pushing image: $IMAGE_NAME"
           docker build -t "$IMAGE_NAME" .
           docker push "$IMAGE_NAME"
-          echo "image=$IMAGE_NAME" >> $GITHUB_OUTPUT
+          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
       - name: Set output image name
         id: set-image
-        run: |
-          SHORT_SHA=${GITHUB_SHA::7}
-          IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}/crypto-read-service:${SHORT_SHA}
-          echo "image=$IMAGE_NAME" >> $GITHUB_OUTPUT
+        run: echo "image=${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
 
   deploy-to-aks:
     needs: docker-build-and-push
