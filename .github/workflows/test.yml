@@ -94,9 +94,20 @@ jobs:
       # 2) Render the Kubernetes manifest
       - name: Render k8s manifest
         run: |
-          IMAGE_NAME=${{ needs.docker-build-and-push.outputs.image }}
-          envsubst < k8s/crypto-read-service.yaml \
-                   > k8s/crypto-read-service.generated.yaml
+          # grab the image from the previous job
+          export IMAGE_NAME=${{ needs.docker-build-and-push.outputs.image }}
+      
+          # optionally: sanity‑check
+          echo "Rendering with IMAGE_NAME=$IMAGE_NAME"
+      
+          # substitute only that var in your template
+          envsubst '${IMAGE_NAME}' \
+            < k8s/crypto-read-service.yaml \
+            > k8s/crypto-read-service.generated.yaml
+      
+          # debug: show the first few lines to confirm
+          head -n 10 k8s/crypto-read-service.generated.yaml
+
 
       # 3) Deploy to Kubernetes
       - name: kubectl apply
