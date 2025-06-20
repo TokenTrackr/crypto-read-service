@@ -74,11 +74,14 @@ jobs:
           echo "Building and pushing image: $IMAGE_NAME"
           docker build -t "$IMAGE_NAME" .
           docker push "$IMAGE_NAME"
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
+          echo "image=$IMAGE_NAME" >> $GITHUB_OUTPUT
 
       - name: Set output image name
         id: set-image
-        run: echo "image=${IMAGE_NAME}" >> $GITHUB_OUTPUT
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}/crypto-read-service:${SHORT_SHA}
+          echo "image=$IMAGE_NAME" >> $GITHUB_OUTPUT
 
   deploy-to-aks:
     needs: docker-build-and-push
@@ -93,19 +96,21 @@ jobs:
           resource-group: TokenTrackrRG
           cluster-name: TokenTrackrCluster
 
+      - name: Verify image name from previous job
+        run: |
+          echo "Image name from previous job: ${{ needs.docker-build-and-push.outputs.image }}"
+          if [ -z "${{ needs.docker-build-and-push.outputs.image }}" ]; then
+            echo "❌ ERROR: Image name is empty!"
+            exit 1
+          fi
+
       - name: Render and Apply K8s Manifest
         env:
           IMAGE_NAME: ${{ needs.docker-build-and-push.outputs.image }}
         run: |
           # 1. Debug the input value
           echo "IMAGE_NAME value: '$IMAGE_NAME'"
-          if [ -z "$IMAGE_NAME" ]; then
-            echo "❌ ERROR: IMAGE_NAME is empty!"
-            echo "Docker build outputs:"
-            echo "${{ toJSON(needs.docker-build-and-push.outputs) }}"
-            exit 1
-          fi
-      
+          
           # 2. Verify template file exists
           if [ ! -f "k8s/crypto-read-service.yaml" ]; then
             echo "❌ ERROR: Template file missing!"
@@ -126,8 +131,4 @@ jobs:
       
           # 5. Apply with strict validation
           kubectl apply -f k8s/crypto-read-service.generated.yaml --dry-run=server --validate=true
-          kubectl apply -f k8s/crypto-read-service.generated.yaml
-
-      - name: kubectl apply
-        run: |
           kubectl apply -f k8s/crypto-read-service.generated.yaml
