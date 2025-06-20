@@ -44,7 +44,7 @@ jobs:
     needs: build-and-analyze
     runs-on: ubuntu-latest
     outputs:
-      image: ${{ steps.set-image.outputs.image }}
+      image-tag: ${{ steps.set-tag.outputs.image-tag }}
     steps:
       - uses: actions/checkout@v3
 
@@ -66,19 +66,21 @@ jobs:
           username: ${{ secrets.DOCKER_USERNAME }}
           password: ${{ secrets.DOCKER_PASSWORD }}
 
-      - name: Build & push Docker image with short SHA tag
+      - name: Build & push Docker image
         id: build-push
         run: |
           SHORT_SHA=${GITHUB_SHA::7}
+          echo "SHORT_SHA=${SHORT_SHA}" >> $GITHUB_OUTPUT
           IMAGE_NAME=${{ secrets.DOCKER_USERNAME }}/crypto-read-service:${SHORT_SHA}
           echo "Building and pushing image: $IMAGE_NAME"
           docker build -t "$IMAGE_NAME" .
           docker push "$IMAGE_NAME"
-          echo "IMAGE_NAME=$IMAGE_NAME" >> $GITHUB_ENV
 
-      - name: Set output image name
-        id: set-image
-        run: echo "image=${{ env.IMAGE_NAME }}" >> $GITHUB_OUTPUT
+      - name: Set output image tag
+        id: set-tag
+        run: |
+          SHORT_SHA=${GITHUB_SHA::7}
+          echo "image-tag=${SHORT_SHA}" >> $GITHUB_OUTPUT
 
   deploy-to-aks:
     needs: docker-build-and-push
@@ -93,39 +95,36 @@ jobs:
           resource-group: TokenTrackrRG
           cluster-name: TokenTrackrCluster
 
-      - name: Verify image name from previous job
+      - name: Verify image tag from previous job
         run: |
-          echo "Image name from previous job: ${{ needs.docker-build-and-push.outputs.image }}"
-          if [ -z "${{ needs.docker-build-and-push.outputs.image }}" ]; then
-            echo "❌ ERROR: Image name is empty!"
+          echo "Image tag from previous job: ${{ needs.docker-build-and-push.outputs.image-tag }}"
+          if [ -z "${{ needs.docker-build-and-push.outputs.image-tag }}" ]; then
+            echo "❌ ERROR: Image tag is empty!"
             exit 1
           fi
 
       - name: Render and Apply K8s Manifest
         env:
-          IMAGE_NAME: ${{ needs.docker-build-and-push.outputs.image }}
+          DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
+          IMAGE_TAG: ${{ needs.docker-build-and-push.outputs.image-tag }}
         run: |
-          # 1. Debug the input value
-          echo "IMAGE_NAME value: '$IMAGE_NAME'"
+          IMAGE_NAME="$DOCKER_USERNAME/crypto-read-service:$IMAGE_TAG"
+          echo "Full image name: $IMAGE_NAME"
           
-          # 2. Verify template file exists
           if [ ! -f "k8s/crypto-read-service.yaml" ]; then
             echo "❌ ERROR: Template file missing!"
             ls -la k8s/
             exit 1
           fi
       
-          # 3. Perform substitution with verification
           sed "s|\${IMAGE_NAME}|$IMAGE_NAME|g" k8s/crypto-read-service.yaml > k8s/crypto-read-service.generated.yaml
           echo "=== Generated YAML ==="
           cat k8s/crypto-read-service.generated.yaml
       
-          # 4. Validate the replacement
           if grep -q '\${IMAGE_NAME}' k8s/crypto-read-service.generated.yaml; then
             echo "❌ ERROR: Variable substitution failed!"
             exit 1
           fi
       
-          # 5. Apply with strict validation
           kubectl apply -f k8s/crypto-read-service.generated.yaml --dry-run=server --validate=true
           kubectl apply -f k8s/crypto-read-service.generated.yaml
