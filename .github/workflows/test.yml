@@ -94,27 +94,14 @@ jobs:
           cluster-name: TokenTrackrCluster
 
       - name: Render k8s manifest
+        env:
+          IMAGE_NAME: ${{ needs.docker-build-and-push.outputs.image }}
         run: |
-          # Explicitly set and export the variable
-          IMAGE_NAME="${{ needs.docker-build-and-push.outputs.image }}"
-          export IMAGE_NAME
-          
-          # Debug: Verify the value
           echo "Using IMAGE_NAME: $IMAGE_NAME"
-          
-          # Install envsubst if missing (common in Ubuntu runners)
-          command -v envsubst >/dev/null 2>&1 || {
-            echo "Installing envsubst..."
-            sudo apt-get update && sudo apt-get install -y gettext-base
-          }
-          
-          # Perform substitution (note the single quotes around the template!)
+          command -v envsubst >/dev/null 2>&1 || { sudo apt-get update && sudo apt-get install -y gettext-base; }
           envsubst '${IMAGE_NAME}' < k8s/crypto-read-service.yaml > k8s/crypto-read-service.generated.yaml
-          
-          # Critical verification
           echo "=== Generated YAML (image section) ==="
           grep -A 5 'image:' k8s/crypto-read-service.generated.yaml
-          echo "===================================="
 
       - name: kubectl apply
         run: |
