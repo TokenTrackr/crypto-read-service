@@ -5,7 +5,6 @@ import com.tokentrackr.crypto_read_service.model.Crypto;
 import com.tokentrackr.crypto_read_service.service.interfaces.GetCryptoByIdService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.redis.core.RedisTemplate;
-import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -13,7 +12,6 @@ import org.springframework.stereotype.Service;
 public class GetCryptoByIdServiceImpl implements GetCryptoByIdService {
 
     private final RedisTemplate<String, Crypto> redisTemplate;
-    private final StringRedisTemplate stringRedisTemplate;
 
     @Override
     public Crypto getById(String id) {

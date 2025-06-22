@@ -1,8 +1,11 @@
 package com.tokentrackr.crypto_read_service.controller;
 
+import com.tokentrackr.crypto_read_service.model.Crypto;
 import com.tokentrackr.crypto_read_service.model.request.GetAllCryptoRequest;
 import com.tokentrackr.crypto_read_service.model.response.GetAllCryptoResponse;
 import com.tokentrackr.crypto_read_service.service.interfaces.GetAllCryptoService;
+import com.tokentrackr.crypto_read_service.service.interfaces.GetCryptoByIdService;
+import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.DistributionSummary;
 import io.micrometer.core.instrument.MeterRegistry;
 import org.junit.jupiter.api.Test;
@@ -34,6 +37,9 @@ class CryptoControllerTest {
     private GetAllCryptoService getAllCryptoService;
 
     @MockitoBean
+    private GetCryptoByIdService getCryptoByIdService;
+
+    @MockitoBean
     private MeterRegistry meterRegistry;
 
     @Test
@@ -56,5 +62,24 @@ class CryptoControllerTest {
                         .accept(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(content().json("{\"crypto\":[]}"));
+    }
+
+    @Test
+    void getCryptoById_returnsNotFoundWhenMissing() throws Exception {
+        // Arrange
+        String cryptoId = "unknown";
+
+        when(getCryptoByIdService.getById(cryptoId))
+                .thenReturn(null);
+
+        // Mock the counter (though it shouldn't be called in this case)
+        Counter mockCounter = mock(Counter.class);
+        when(meterRegistry.counter("crypto_by_id_requests", "id", cryptoId))
+                .thenReturn(mockCounter);
+
+        // Act & Assert
+        mockMvc.perform(get("/crypto/{id}", cryptoId)
+                        .accept(MediaType.APPLICATION_JSON))
+                .andExpect(status().isNotFound());
     }
 }
