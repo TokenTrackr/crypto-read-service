@@ -15,16 +15,20 @@ spec:
     spec:
       containers:
       - name: crypto-read-service
-        image: ${IMAGE_NAME}
+        image: 0xjhn/crypto-read-service:latest
         ports:
         - containerPort: 8080
         env:
         - name: SPRING_RABBITMQ_HOST
-          value: rabbitmq-release
+          value: rabbitmq
         - name: REDIS_HOST
-          value: redis-release-master
+          value: redis-master
         - name: REDIS_PORT
           value: "6379"
+        - name: SPRING_RABBITMQ_USERNAME
+          value: guest
+        - name: SPRING_RABBITMQ_PASSWORD
+          value: guest
 
 ---
 
@@ -44,4 +48,4 @@ spec:
   - protocol: TCP
     port: 8080
     targetPort: 8080
-  type: NodePort
+  type: LoadBalancer
